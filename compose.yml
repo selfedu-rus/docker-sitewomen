@@ -1,0 +1,79 @@
+services:
+  nginx:
+# только свежий nginx
+    image: nginx:latest
+    container_name: nginx-server
+# при падении будет стараться подняться
+    restart: always
+# информация, что слушаем порт 8088
+    networks:
+      - dbnet
+    expose:
+      - 8088
+# мапаем порт 80 на его 8088. Тогда сайт будет доступен по адресу localhost. Убедись, что порт у тебя не занят.
+    ports:
+      - "80:8088"
+# монтируем только те директории, в которых лежит статика, т.к. nginx с динамикой не будет работать. Также директорию с логами и файл настройки, который мы подготовили.
+    volumes:
+      - ./sitewomen/static:/app/www/sitewomen/static
+      - ./sitewomen/media:/app/www/sitewomen/media
+      - ./sitewomen/logs:/app/www/sitewomen/logs
+      - ./nginx:/etc/nginx/conf.d
+# и nginx зависит от контейнера python. Т.е. sitewomen должен быть запущен первым
+    depends_on:
+      - sitewomen
+
+  sitewomen:
+    build: ./sitewomen
+    image: sitewomen
+    container_name: sitewomen
+    restart: always
+    command: bash -c "python manage.py migrate && gunicorn -c gunicorn.py sitewomen.wsgi"
+#    command: bash -c "python manage.py migrate && gunicorn sitewomen.wsgi:application --bind 0.0.0.0:8000"
+#    command: python manage.py runserver 0.0.0.0:8000
+#    CMD [ "python", "./manage.py", "runserver", "0.0.0.0:8000", "--settings=mysite.settings.prod" ]
+    env_file:
+      - .env
+    links:
+      - "postgres:dbps"
+    networks:
+      - dbnet
+    volumes:
+      - ./sitewomen:/app/www/sitewomen
+    # expose:
+    #   - 8000
+    # ports:
+    #   - "8000:8000"
+    depends_on:
+      - postgres
+
+  adminer:
+    image: adminer
+    container_name: adminer
+    ports:
+      - "127.0.0.1:8080:8080"
+    links:
+      - "postgres:db"
+    networks:
+      - dbnet
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: psgr
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=${DATABASE_NAME}
+      - POSTGRES_USER=${DATABASE_USERNAME}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+    networks:
+      - dbnet
+
+networks:
+  dbnet:
+    driver: bridge
+
+volumes:
+  postgres-data:
